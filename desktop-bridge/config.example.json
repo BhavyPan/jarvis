@@ -1,0 +1,17 @@
+{
+  "port": 3100,
+  "host": "127.0.0.1",
+  "allowedApps": {
+    "notepad": "notepad.exe",
+    "calculator": "calc.exe",
+    "browser": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  },
+  "allowedHotkeys": [
+    "ALT+TAB",
+    "CTRL+L",
+    "CTRL+C",
+    "CTRL+V",
+    "WIN+D"
+  ],
+  "speakNotifications": true
+}
