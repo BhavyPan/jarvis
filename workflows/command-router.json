@@ -1,0 +1,86 @@
+{
+  "name": "Jarvis - Command Router",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis/command",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c1111111-1111-4111-8111-111111111111",
+      "name": "Command webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ],
+      "webhookId": "jarvis-command-router"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $json.headers ?? {};\nconst suppliedKey = headers['x-jarvis-key'] ?? headers['X-Jarvis-Key'];\nif (!suppliedKey || suppliedKey !== $env.JARVIS_API_KEY) {\n  return [{ json: { ok: false, status: 401, error: 'Unauthorized' } }];\n}\nconst body = $json.body ?? {};\nconst action = String(body.action ?? '').trim().toLowerCase();\nconst routes = {\n  send_email: { path: '/webhook/jarvis/send-email', confirmation: 'SEND EMAIL' },\n  send_telegram: { path: '/webhook/jarvis/send-telegram', confirmation: 'SEND MESSAGE' },\n  desktop_action: { path: '/webhook/jarvis/desktop-action', confirmation: 'CONTROL PC' },\n  web_research: { path: '/webhook/jarvis/web-research', confirmation: 'BROWSE WEB' },\n};\nif (!routes[action]) {\n  return [{ json: { ok: false, status: 400, error: 'Unsupported action', supportedActions: Object.keys(routes) } }];\n}\nreturn [{\n  json: {\n    ok: true,\n    action,\n    endpoint: routes[action].path,\n    requiredConfirmation: routes[action].confirmation,\n    message: 'Validate the user request, present a preview, then call this endpoint with approved:true and the required confirmation.',\n    payload: body,\n  },\n}];"
+      },
+      "id": "c2222222-2222-4222-8222-222222222222",
+      "name": "Validate and route command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}"
+        }
+      },
+      "id": "c3333333-3333-4333-8333-333333333333",
+      "name": "Return route",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Command webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate and route command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate and route command": {
+      "main": [
+        [
+          {
+            "node": "Return route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "c4444444-4444-4444-8444-444444444444",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
