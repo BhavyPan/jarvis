@@ -1,0 +1,330 @@
+{
+  "name": "Jarvis - Master AI Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis/assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1111111-1111-4111-8111-111111111111",
+      "name": "Jarvis command webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -860,
+        0
+      ],
+      "webhookId": "jarvis-master-assistant"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $json.headers ?? {};\nconst body = $json.body ?? {};\nconst suppliedKey = headers['x-jarvis-key'] ?? headers['X-Jarvis-Key'];\nconst text = String(body.text ?? body.command ?? '').trim().slice(0, 4000);\nconst authorized = suppliedKey === $env.JARVIS_API_KEY && text.length > 0;\nreturn [{json:{\n  authorized,\n  text,\n  approved: body.approved === true,\n  confirmation: String(body.confirmation ?? ''),\n  error: authorized ? undefined : 'Provide x-jarvis-key and a non-empty text command.'\n}}];"
+      },
+      "id": "a2222222-2222-4222-8222-222222222222",
+      "name": "Validate user command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -620,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a-auth",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a3333333-3333-4333-8333-333333333333",
+      "name": "Is authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -390,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: $env.JARVIS_OPENAI_MODEL || 'gpt-4.1-mini', input: 'You are Jarvis, a concise personal assistant. Return ONLY a JSON object with action, reply, payload. action must be chat, send_email, send_telegram, desktop_action, or web_research. For desktop_action payload is {action: open_app|open_url|take_screenshot|type_text|hotkey|speak, args:{...}}. For web_research payload is {mode: search|read, query?: string, url?: string}. For email payload is {to, subject, message}; for Telegram it is {chatId, text}. Never claim an action occurred; describe the planned action. User command: ' + $json.text }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "a4444444-4444-4444-8444-444444444444",
+      "name": "Ask OpenAI to plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        -110
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const source = $('Validate user command').first().json;\nconst output = Array.isArray($json.output) ? $json.output : [];\nconst text = output.flatMap(item => item.content ?? []).find(item => item.type === 'output_text')?.text ?? '';\nlet plan;\ntry { plan = JSON.parse(text); } catch { plan = { action: 'chat', reply: text || 'I could not prepare that request.', payload: {} }; }\nconst actionMap = {\n  send_email: { target: 'jarvis/send-email', confirmation: 'SEND EMAIL' },\n  send_telegram: { target: 'jarvis/send-telegram', confirmation: 'SEND MESSAGE' },\n  desktop_action: { target: 'jarvis/desktop-action', confirmation: 'CONTROL PC' },\n  web_research: { target: 'jarvis/web-research', confirmation: 'BROWSE WEB' },\n};\nconst action = actionMap[plan.action] ? plan.action : 'chat';\nconst required = actionMap[action]?.confirmation;\nconst execute = Boolean(required && source.approved && source.confirmation === required);\nconst payload = { ...(plan.payload && typeof plan.payload === 'object' ? plan.payload : {}), approved: true, confirmation: required };\nreturn [{json:{\n  ok: true,\n  reply: String(plan.reply ?? 'Ready.'),\n  action,\n  requiresConfirmation: Boolean(required),\n  requiredConfirmation: required ?? null,\n  execute,\n  target: actionMap[action]?.target ?? null,\n  forwardPayload: payload,\n}}];"
+      },
+      "id": "a5555555-5555-4555-8555-555555555555",
+      "name": "Validate AI plan and confirmation",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        -110
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "a-execute",
+              "leftValue": "={{ $json.execute }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a6666666-6666-4666-8666-666666666666",
+      "name": "Execute confirmed action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        340,
+        -110
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JARVIS_N8N_BASE_URL + '/webhook/' + $json.target }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-jarvis-key",
+              "value": "={{ $env.JARVIS_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json.forwardPayload) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "a7777777-7777-4777-8777-777777777777",
+      "name": "Run action workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        580,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, executed: true, result: $json } }}",
+        "options": {}
+      },
+      "id": "a8888888-8888-4888-8888-888888888888",
+      "name": "Return completed action",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        820,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "a9999999-9999-4999-8999-999999999999",
+      "name": "Return plan or chat",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        580,
+        10
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, error: $json.error } }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "aaaaaaa1-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "name": "Return unauthorized",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -140,
+        120
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jarvis command webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate user command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate user command": {
+      "main": [
+        [
+          {
+            "node": "Is authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is authorized?": {
+      "main": [
+        [
+          {
+            "node": "Ask OpenAI to plan",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return unauthorized",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask OpenAI to plan": {
+      "main": [
+        [
+          {
+            "node": "Validate AI plan and confirmation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI plan and confirmation": {
+      "main": [
+        [
+          {
+            "node": "Execute confirmed action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute confirmed action?": {
+      "main": [
+        [
+          {
+            "node": "Run action workflow",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return plan or chat",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run action workflow": {
+      "main": [
+        [
+          {
+            "node": "Return completed action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "abbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
