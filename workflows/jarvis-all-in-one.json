@@ -1,0 +1,741 @@
+{
+  "name": "Jarvis - All-in-One AI Assistant",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "jarvis/assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "o001",
+      "name": "Jarvis command",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        -260
+      ],
+      "webhookId": "jarvis-all-in-one"
+    },
+    {
+      "parameters": {
+        "jsCode": "const headers = $json.headers ?? {}; const body = $json.body ?? {};\nconst text = String(body.text ?? body.command ?? '').trim().slice(0, 4000);\nreturn [{json:{authorized:(headers['x-jarvis-key'] ?? headers['X-Jarvis-Key']) === $env.JARVIS_API_KEY && Boolean(text),text,approved:body.approved === true,confirmation:String(body.confirmation ?? ''),error:'Provide x-jarvis-key and a text command.'}}];"
+      },
+      "id": "o002",
+      "name": "Validate command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -820,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "auth",
+              "leftValue": "={{ $json.authorized }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "o003",
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -600,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/responses",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "={{ 'Bearer ' + $env.OPENAI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ model: $env.JARVIS_OPENAI_MODEL || 'gpt-4.1-mini', input: 'You are Jarvis. Return ONLY JSON: {action,reply,payload}. action is one of chat,send_email,send_telegram,desktop_action,web_research. Email payload: {to,subject,message}; Telegram: {chatId,text}; desktop: {action:open_app|open_url|take_screenshot|type_text|hotkey|speak,args:{}}; research: {mode:search|read,query?,url?}. Never claim action success. User: ' + $json.text }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "o004",
+      "name": "Ask AI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -370,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const original = $('Validate command').first().json;\nconst text = (Array.isArray($json.output) ? $json.output : []).flatMap(x => x.content ?? []).find(x => x.type === 'output_text')?.text ?? '';\nlet plan; try { plan = JSON.parse(text); } catch { plan = {action:'chat',reply:text || 'I could not understand that.',payload:{}}; }\nconst map = {send_email:'SEND EMAIL',send_telegram:'SEND MESSAGE',desktop_action:'CONTROL PC',web_research:'BROWSE WEB'};\nconst action = Object.hasOwn(map, plan.action) ? plan.action : 'chat';\nconst confirmation = map[action] ?? null;\nreturn [{json:{action,reply:String(plan.reply ?? 'Ready.'),payload:plan.payload && typeof plan.payload === 'object' ? plan.payload : {},requiredConfirmation:confirmation,requiresConfirmation:Boolean(confirmation),execute:Boolean(confirmation && original.approved && original.confirmation === confirmation)}}];"
+      },
+      "id": "o005",
+      "name": "Validate AI plan",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "exec",
+              "leftValue": "={{ $json.execute }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "o006",
+      "name": "Confirmed action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        80,
+        -360
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "email",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "send_email",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "o007",
+      "name": "Email action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        300,
+        -470
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "sendTo": "={{ $json.payload.to }}",
+        "subject": "={{ $json.payload.subject }}",
+        "message": "={{ $json.payload.message }}",
+        "options": {}
+      },
+      "id": "o008",
+      "name": "Send Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        520,
+        -560
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "telegram",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "send_telegram",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "o009",
+      "name": "Telegram action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "={{ $json.payload.chatId }}",
+        "text": "={{ $json.payload.text }}",
+        "additionalFields": {}
+      },
+      "id": "o010",
+      "name": "Send Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        740,
+        -470
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Telegram bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "desktop",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "desktop_action",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "o011",
+      "name": "Desktop action?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        740,
+        -290
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JARVIS_DESKTOP_BRIDGE_URL + '/actions' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-jarvis-bridge-key",
+              "value": "={{ $env.JARVIS_BRIDGE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({action:$json.payload.action,args:$json.payload.args || {},requestId:Date.now().toString()}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "o012",
+      "name": "Control Windows",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JARVIS_DESKTOP_BRIDGE_URL + '/research' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-jarvis-bridge-key",
+              "value": "={{ $env.JARVIS_BRIDGE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({mode:$json.payload.mode,query:$json.payload.query,url:$json.payload.url,requestId:Date.now().toString()}) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "o013",
+      "name": "Browse web",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        -200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:true,executed:true,result:$json} }}",
+        "options": {}
+      },
+      "id": "o014",
+      "name": "Return completed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1180,
+        -380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "o015",
+      "name": "Return plan",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        -250
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {ok:false,error:$json.error} }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "o016",
+      "name": "Return denied",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        -370,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "options": {
+          "downloadAttachments": false,
+          "postProcessAction": "none"
+        }
+      },
+      "id": "o017",
+      "name": "New Gmail",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -820,
+        180
+      ],
+      "credentials": {
+        "imap": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Gmail IMAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const from=$json.from?.value?.[0]?.address ?? $json.from?.text ?? 'Unknown sender'; return [{json:{title:'New email',message:'From: '+from+' — '+String($json.subject ?? '(no subject)').slice(0,160),level:'info'}}];"
+      },
+      "id": "o018",
+      "name": "Format email alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -590,
+        180
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "o019",
+      "name": "New Telegram message",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -820,
+        390
+      ],
+      "webhookId": "jarvis-all-in-one-telegram",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Telegram bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const m=$json.message ?? $json; const sender=m.from?.first_name ?? m.from?.username ?? 'Unknown sender'; return [{json:{title:'New Telegram message',message:sender+': '+String(m.text ?? m.caption ?? '[non-text message]').slice(0,240),level:'info'}}];"
+      },
+      "id": "o020",
+      "name": "Format Telegram alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -590,
+        390
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JARVIS_DESKTOP_BRIDGE_URL + '/notify' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-jarvis-bridge-key",
+              "value": "={{ $env.JARVIS_BRIDGE_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "o021",
+      "name": "Tell me on PC",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -350,
+        280
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Jarvis command": {
+      "main": [
+        [
+          {
+            "node": "Validate command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate command": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Ask AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return denied",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask AI": {
+      "main": [
+        [
+          {
+            "node": "Validate AI plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI plan": {
+      "main": [
+        [
+          {
+            "node": "Confirmed action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Confirmed action?": {
+      "main": [
+        [
+          {
+            "node": "Email action?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Return plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email action?": {
+      "main": [
+        [
+          {
+            "node": "Send Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Gmail": {
+      "main": [
+        [
+          {
+            "node": "Return completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram action?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Desktop action?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram": {
+      "main": [
+        [
+          {
+            "node": "Return completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Desktop action?": {
+      "main": [
+        [
+          {
+            "node": "Control Windows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Browse web",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Control Windows": {
+      "main": [
+        [
+          {
+            "node": "Return completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Browse web": {
+      "main": [
+        [
+          {
+            "node": "Return completed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Gmail": {
+      "main": [
+        [
+          {
+            "node": "Format email alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format email alert": {
+      "main": [
+        [
+          {
+            "node": "Tell me on PC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New Telegram message": {
+      "main": [
+        [
+          {
+            "node": "Format Telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Telegram alert": {
+      "main": [
+        [
+          {
+            "node": "Tell me on PC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "oallinone-2026-08-01",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
