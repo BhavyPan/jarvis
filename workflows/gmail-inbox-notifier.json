@@ -1,0 +1,105 @@
+{
+  "name": "Jarvis - Gmail Inbox Notifier",
+  "nodes": [
+    {
+      "parameters": {
+        "mailbox": "INBOX",
+        "options": {
+          "downloadAttachments": false,
+          "postProcessAction": "none"
+        }
+      },
+      "id": "g1111111-1111-4111-8111-111111111111",
+      "name": "Watch inbox (IMAP)",
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        0
+      ],
+      "credentials": {
+        "imap": {
+          "id": "REPLACE_AFTER_IMPORT",
+          "name": "Gmail IMAP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const fromValue = $json.from?.value?.[0];\nconst from = fromValue?.name\n  ? `${fromValue.name} <${fromValue.address}>`\n  : (fromValue?.address ?? $json.from?.text ?? $json.from ?? 'Unknown sender');\nconst subject = String($json.subject ?? '(no subject)').replace(/[\\r\\n]+/g, ' ').slice(0, 160);\nreturn [{json:{\n  title: 'New email',\n  message: `From: ${from}\\nSubject: ${subject}`,\n  level: 'info'\n}}];"
+      },
+      "id": "g2222222-2222-4222-8222-222222222222",
+      "name": "Create private notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -140,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.JARVIS_DESKTOP_BRIDGE_URL + '/notify' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "g3333333-3333-4333-8333-333333333333",
+      "name": "Notify desktop bridge",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        110,
+        0
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Watch inbox (IMAP)": {
+      "main": [
+        [
+          {
+            "node": "Create private notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create private notification": {
+      "main": [
+        [
+          {
+            "node": "Notify desktop bridge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "g4444444-4444-4444-8444-444444444444",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
