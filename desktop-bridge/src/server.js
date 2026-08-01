@@ -119,6 +119,18 @@ function handleAction(body) {
   }
   throw new Error('Unsupported desktop action.');
 }
+const ui = `<!doctype html><html><head><meta charset="utf-8"><title>Jarvis</title><style>body{font:16px system-ui;max-width:720px;margin:8vh auto;padding:24px;background:#10131a;color:#eef}textarea,button{font:inherit;padding:12px}textarea{box-sizing:border-box;width:100%;min-height:110px}button{margin:12px 8px 0 0}#result{white-space:pre-wrap;background:#181d28;padding:16px;border-radius:8px}</style></head><body><h1>Jarvis</h1><p>Ask by typing or voice. Actions need a second confirmation.</p><textarea id="text" placeholder="Example: Open Chrome and search for n8n tutorials"></textarea><br><button onclick="listen()">🎙 Speak</button><button onclick="send(false)">Ask Jarvis</button><button id="approve" hidden onclick="send(true)">Approve action</button><pre id="result"></pre><script>let required='';const out=document.querySelector('#result');async function send(approved){const text=document.querySelector('#text').value.trim();if(!text)return;out.textContent='Thinking…';const r=await fetch('/command',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text,approved,confirmation:approved?required:''})});const j=await r.json();out.textContent=JSON.stringify(j,null,2);required=j.requiredConfirmation||'';document.querySelector('#approve').hidden=!j.requiresConfirmation||approved;if(j.reply&&'speechSynthesis'in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(j.reply));}}function listen(){const R=window.SpeechRecognition||window.webkitSpeechRecognition;if(!R){out.textContent='Speech recognition is available in Chrome or Edge.';return;}const r=new R();r.lang='en-US';r.onresult=e=>{document.querySelector('#text').value=e.results[0][0].transcript;send(false)};r.start();}</script></body></html>`;
+async function forwardCommand(body) {
+  const url = process.env.JARVIS_N8N_URL || 'http://127.0.0.1:5678/webhook/jarvis/assistant';
+  const apiKey = process.env.JARVIS_API_KEY;
+  if (!apiKey) throw new Error('Set JARVIS_API_KEY for the local Jarvis user interface.');
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-jarvis-key': apiKey },
+    body: JSON.stringify(body),
+  });
+  return { status: response.status, body: await response.json() };
+}
 function requestBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
@@ -133,7 +145,17 @@ function requestBody(req) {
   });
 }
 const server = http.createServer(async (req, res) => {
+  if (req.method === 'GET' && req.url === '/') {
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    return res.end(ui);
+  }
   if (req.method === 'GET' && req.url === '/health') return send(res, 200, { ok: true, actions: ['open_app', 'open_url', 'take_screenshot', 'type_text', 'hotkey', 'speak'] });
+  if (req.method === 'POST' && req.url === '/command') {
+    try {
+      const result = await forwardCommand(await requestBody(req));
+      return send(res, result.status, result.body);
+    } catch (error) { return send(res, 502, { ok: false, error: error.message }); }
+  }
   if (req.method !== 'POST') return send(res, 404, { ok: false, error: 'Not found' });
   if (!isAuthorized(req)) return send(res, 401, { ok: false, error: 'Unauthorized' });
   try {
