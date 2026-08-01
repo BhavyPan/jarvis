@@ -27,6 +27,7 @@ Import the JSON files in this folder into a **local n8n** instance to create a p
 
    - `JARVIS_API_KEY`: a long random value. Send it in the `x-jarvis-key` request header.
    - `JARVIS_DESKTOP_BRIDGE_URL`: the local bridge URL, for example `http://127.0.0.1:3100`.
+   - `JARVIS_BRIDGE_KEY`: a different long random value used by n8n when it calls the bridge.
 
 4. Build/run a local desktop bridge that implements:
 
@@ -34,7 +35,7 @@ Import the JSON files in this folder into a **local n8n** instance to create a p
    - `POST /actions` — receives `{ action, args, requestId }`
    - `POST /research` — receives `{ mode, query, url, requestId }`
 
-The bridge must bind to loopback only, authenticate requests, and enforce its own allow-list. For PC actions, permit only specific actions such as `open_app`, `open_url`, `take_screenshot`, `type_text`, and `hotkey`. Never expose arbitrary shell execution.
+The bridge must bind to loopback only, verify `x-jarvis-bridge-key`, and enforce its own allow-list. For PC actions, permit only specific actions such as `open_app`, `open_url`, `take_screenshot`, `type_text`, and `hotkey`. Never expose arbitrary shell execution.
 
 ## Calling an action
 
